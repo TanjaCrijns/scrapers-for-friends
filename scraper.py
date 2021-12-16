@@ -4,15 +4,14 @@ import pickle
 import time
 from notify_run import Notify
 
-if __name__ == "__main__":
-    # Get number of pages
+def lambda_handler(event, context):
     url = "https://www.woningnetregioutrecht.nl/webapi/zoeken/find/"
 
     response = requests.post(
         url=url,
         data={"url": "model[Regulier%20aanbod]",
-              "command": "",
-              "hideunits": "hideunits[]",},).json()
+            "command": "",
+            "hideunits": "hideunits[]",},).json()
     paths = ["model[Regulier%20aanbod]", "model[Vrijesectorhuur]", "model[Loting]"]
     filter_counts = response["Filters"]["FiltersList"][0]["OptieLijst"]["Opties"]
     for count in filter_counts:
@@ -71,5 +70,6 @@ if __name__ == "__main__":
         pickle.dump(houses, fp)
 
     for message in messages:
+        print(message)
         notify = Notify(endpoint="")
         notify.send(message)
