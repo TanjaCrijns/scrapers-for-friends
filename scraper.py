@@ -1,8 +1,15 @@
 import requests
 import math
-import pickle
 import time
-from notify_run import Notify
+import boto3
+import json
+
+def telegram_bot_sendtext(bot_message):
+    bot_token = ''
+    bot_chatID = ''
+    send_text = 'https://api.telegram.org/bot' + bot_token + '/sendMessage?chat_id=' + bot_chatID + '&parse_mode=Markdown&text=' + bot_message
+    response = requests.get(send_text)
+    return response.json()
 
 def lambda_handler(event, context):
     url = "https://www.woningnetregioutrecht.nl/webapi/zoeken/find/"
@@ -47,29 +54,32 @@ def lambda_handler(event, context):
     ]
     houses = []
     for path in paths:
-        time.sleep(0.1)
+        time.sleep(0.5)
         response = requests.post(
             url="https://www.woningnetregioutrecht.nl/webapi/zoeken/find/",
             data={"url": path, "command": "", "hideunits": "hideunits[]"},
         )
         for house in response.json()["Resultaten"]:
-            if (any(city in house["PlaatsWijk"].lower() for city in cities)
-                and int(house["Kamers"]) >= 2):
-                houses.append(house)
+            if (any(city in house["PlaatsWijk"].lower() for city in cities) and int(house["Kamers"]) >= 2):
+                keys = ["Adres", "PlaatsWijk", "Kamers", "PublicatieId", "AdvertentieUrl"]
+                temp_house = {key: house[key] for key in keys}
+                houses.append(temp_house)
 
-    with open("houses.pkl", "rb") as fp:
-        prev_houses = pickle.load(fp)
+    s3 = boto3.resource('s3')
+    bucket = "woningnet"
+    file = "houses.json"
+    prev_houses = json.loads(s3.Bucket(bucket).Object("houses.json").get()['Body'].read().decode('utf-8'))
 
     messages = []
     for house in houses:
         if house not in prev_houses:
             house_url = (f"https://www.woningnetregioutrecht.nl{house['AdvertentieUrl']}")
-            messages.append(f"Nieuw huis/appartement! {house_url}")
-
-    with open("houses.pkl", "wb") as fp:
-        pickle.dump(houses, fp)
-
+            adres, plaats, kamers = house["Adres"], house["PlaatsWijk"], house["Kamers"]
+            messages.append(f"{adres}, {plaats}, {kamers} kamers: \n{house_url}")
+    
     for message in messages:
         print(message)
-        notify = Notify(endpoint="")
-        notify.send(message)
+        test = telegram_bot_sendtext(message)
+
+    new_houses = prev_houses + [house for house in houses if house not in prev_houses]
+    s3.Object(bucket, file).put(Body=(bytes(json.dumps(new_houses).encode('UTF-8'))))
